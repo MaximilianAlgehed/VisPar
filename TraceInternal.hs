@@ -21,7 +21,6 @@ module TraceInternal (
 
 import Control.Monad as M hiding (mapM, sequence, join)
 import Prelude hiding (mapM, sequence, head,tail)
-import qualified Data.Map as M
 import Data.IORef
 import System.IO.Unsafe
 import Control.Concurrent
@@ -30,9 +29,6 @@ import Control.DeepSeq
 import Data.Graph.Inductive hiding (ap, new)
 import Data.GraphViz hiding (C)
 import Data.Text.Lazy (pack)
--- import Text.Printf
-
-import Control.Applicative
 
 type Name = Int
 
