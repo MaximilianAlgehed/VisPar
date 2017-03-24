@@ -24,4 +24,4 @@ parMapM f as = do
   mapM get ibs
 
 main :: IO ()
-main = saveGraphPdf (snd $ runPar $ (parMapM (return . (*10)) [1..(4 :: Int)])) "graph.pdf"
+main = saveGraphPdf (snd $ runPar $ (parMapM return [1..(4 :: Int)])) "graph.pdf"
