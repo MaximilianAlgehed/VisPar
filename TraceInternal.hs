@@ -15,7 +15,8 @@ module TraceInternal (
    -- runParAsyncHelper,
    new, newFull, newFull_, get, put_, put, fork,
    pollIVar,
-   EdgeType
+   EdgeType,
+   Graph, makeGraph, saveGraphPdf
  ) where
 
 
@@ -26,9 +27,22 @@ import System.IO.Unsafe
 import Control.Concurrent
 import GHC.Conc (numCapabilities)
 import Control.DeepSeq
-import Data.Graph.Inductive hiding (ap, new)
+import Data.Graph.Inductive hiding (ap, new, Graph)
 import Data.GraphViz hiding (C)
 import Data.Text.Lazy (pack)
+
+makeGraph :: Par a -> Graph
+makeGraph = snd . unsafePerformIO . runPar_internal True
+
+saveGraphPdf :: FilePath -> Graph -> IO ()
+saveGraphPdf name g = void $ runGraphviz dg Pdf name
+  where
+    dg = setDirectedness graphToDot params g
+    params = nonClusteredParams { fmtNode = \ (_,l)     -> [toLabel l]
+                                , fmtEdge = \ (_, _, l) -> [toLabel l]
+                                }
+
+type Graph = Gr Int EdgeType
 
 type Name = Int
 
@@ -267,22 +281,22 @@ runPar_internal _doSync x = do
 --   computation.  This is unfortunately not enforced, as it is with
 --   `runST` or with newer libraries that export a Par monad, such as
 --   `lvish`.
-runPar :: Par a -> (a, Gr Int EdgeType)
-runPar = unsafePerformIO . runPar_internal True
+runPar :: Par a -> a
+runPar = fst . unsafePerformIO . runPar_internal True
 
 -- | A version that avoids an internal `unsafePerformIO` for calling
 --   contexts that are already in the `IO` monad.
 --
 --   Returning any value containing IVar is still disallowed, as it
 --   can compromise type safety.
-runParIO :: Par a -> IO (a, Gr Int EdgeType)
-runParIO = runPar_internal True
+runParIO :: Par a -> IO a
+runParIO = (fmap fst) . runPar_internal True
 
 -- | An asynchronous version in which the main thread of control in a
 -- Par computation can return while forked computations still run in
 -- the background.
-runParAsync :: Par a -> (a, Gr Int EdgeType)
-runParAsync = unsafePerformIO . runPar_internal False
+runParAsync :: Par a -> a
+runParAsync = fst . unsafePerformIO . runPar_internal False
 
 -- -----------------------------------------------------------------------------
 

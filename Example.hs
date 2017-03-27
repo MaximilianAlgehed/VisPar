@@ -1,16 +1,15 @@
 import TraceInternal
-import Data.Graph.Inductive hiding (ap, new)
-import Data.GraphViz hiding (C)
 import Control.DeepSeq
-import Control.Monad
 
-saveGraphPdf :: Gr Int EdgeType -> FilePath -> IO ()
-saveGraphPdf g name = void $ runGraphviz dg Pdf name
-  where
-    dg = setDirectedness graphToDot params g
-    params = nonClusteredParams { fmtNode = \ (_,l)     -> [toLabel l]
-                                , fmtEdge = \ (_, _, l) -> [toLabel l]
-                                }
+{-
+ fork   :: Par () -> Par ()
+ get    :: IVar a -> Par a
+ put    :: NFData a => IVar a -> a -> Par ()
+ new    :: Par (IVar a)
+
+ runPar :: Par a -> a
+ makeGraph :: Par a -> Graph
+-}
 
 spawn :: NFData a => Par a -> Par (IVar a)
 spawn p = do
@@ -23,5 +22,21 @@ parMapM f as = do
   ibs <- mapM (spawn . f) as
   mapM get ibs
 
+example :: Par [Int]
+example = parMapM (return . (*10)) [1..3]
+
 main :: IO ()
-main = saveGraphPdf (snd $ runPar $ (parMapM return [1..(4 :: Int)])) "graph.pdf"
+main = do
+  print $ runPar example
+  saveGraphPdf "graph.pdf" $ makeGraph example
+
+
+
+
+
+
+
+
+
+
+
