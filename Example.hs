@@ -29,14 +29,3 @@ main :: IO ()
 main = do
   print $ runPar example
   saveGraphPdf "graph.pdf" $ makeGraph example
-
-
-
-
-
-
-
-
-
-
-
