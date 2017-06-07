@@ -30,9 +30,15 @@ import Control.DeepSeq
 import Data.Graph.Inductive hiding (ap, new, Graph)
 import Data.GraphViz hiding (C)
 import Data.Text.Lazy (pack)
+import Data.List
 
 makeGraph :: Par a -> Graph
-makeGraph = snd . unsafePerformIO . runPar_internal True
+makeGraph = normalise . snd . unsafePerformIO . runPar_internal True
+
+normalise :: Graph -> Graph
+normalise g = let labels  = zip (sort $ nub $ snd <$> labNodes g) [0..]
+                  relab x = head $ [ v | (a, v) <- labels, a == x ]
+              in nmap relab g
 
 saveGraphPdf :: FilePath -> Graph -> IO ()
 saveGraphPdf name g = void $ runGraphviz dg Pdf name
