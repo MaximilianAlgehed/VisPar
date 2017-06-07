@@ -1,5 +1,4 @@
-{-# LANGUAGE RankNTypes, NamedFieldPuns, BangPatterns,
-             ExistentialQuantification, CPP #-}
+{-# LANGUAGE ExistentialQuantification, CPP, BangPatterns, NamedFieldPuns #-}
 {-# OPTIONS_GHC -Wall -fno-warn-name-shadowing -fno-warn-unused-do-bind #-}
 
 -- | This module exposes the internals of the @Par@ monad so that you
@@ -62,7 +61,7 @@ data Trace = forall a . Get (IVar a) (a -> Trace)
 
 -- | The main scheduler loop.
 sched :: Bool -> Sched -> (Trace, Name) -> IO ()
-sched _doSync queue (t, n) = loop t n 
+sched _doSync queue (t, n) = loop t n
  where
   loop t thisThread = case t of
 
@@ -80,7 +79,7 @@ sched _doSync queue (t, n) = loop t n
       case e of
          Full a -> do
                     fst (c' source a)
-                    loop (snd (c' source a)) newName 
+                    loop (snd (c' source a)) newName
          _other -> do
            r <- atomicModifyIORef v $ \e -> case e of
                         (Empty, src)      -> ((Blocked [(c', newName)], src),     reschedule queue)
@@ -101,7 +100,7 @@ sched _doSync queue (t, n) = loop t n
     Fork child parent -> do
          newName <-  atomicModifyIORef (graph queue) $
             \g -> let (newName:_) = newNodes 1 g in (insEdge (thisThread, newName, F) $ insNode (newName, newName) g, newName)
-         pushWork queue child newName 
+         pushWork queue child newName
          loop parent thisThread
 
     Done ->
@@ -276,7 +275,7 @@ runPar_internal _doSync x = do
 
 
 -- | Run a parallel, deterministic computation and return its result.
--- 
+--
 --   Note: you must NOT return an IVar in the output of the parallel
 --   computation.  This is unfortunately not enforced, as it is with
 --   `runST` or with newer libraries that export a Par monad, such as
