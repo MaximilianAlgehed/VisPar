@@ -1,0 +1,5 @@
+resolver: lts-8.17
+extra-deps: []
+
+# Override default flag values for local packages and extra-deps
+flags: {}

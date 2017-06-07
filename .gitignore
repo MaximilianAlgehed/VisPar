@@ -4,5 +4,9 @@
 *.pdf
 .cabal-sandbox
 cabal.sandbox.config
+.stack-work
+*~
 *.hi
 *.o
+*~
+.stack-work
