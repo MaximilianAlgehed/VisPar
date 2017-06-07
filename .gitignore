@@ -8,3 +8,5 @@ cabal.sandbox.config
 *~
 *.hi
 *.o
+*~
+.stack-work
