@@ -1,4 +1,4 @@
-{-# LANGUAGE ExistentialQuantification, CPP, BangPatterns, NamedFieldPuns #-}
+{-# LANGUAGE ExistentialQuantification, CPP, BangPatterns, NamedFieldPuns, FlexibleInstances #-}
 {-# OPTIONS_GHC -Wall -fno-warn-name-shadowing -fno-warn-unused-do-bind #-}
 
 -- | This module exposes the internals of the @Par@ monad so that you
@@ -12,7 +12,7 @@ module TraceInternal (
    sched,
    runPar, runParIO, runParAsync,
    -- runParAsyncHelper,
-   new, newFull, newFull_, get, put_, put, fork,
+   new, newFull, newFull_, get, put_, put, fork, forkNamed,
    pollIVar,
    EdgeType,
    Graph, makeGraph, saveGraphPdf
@@ -35,8 +35,8 @@ makeGraph :: Par a -> Graph
 makeGraph = normalise . snd . unsafePerformIO . runPar_internal True
 
 normalise :: Graph -> Graph
-normalise g = let labels  = zip (sort $ nub $ snd <$> labNodes g) [0..]
-                  relab x = head $ [ v | (a, v) <- labels, a == x ]
+normalise g = let labels  = zip (sort $ nub $ fst . snd <$> labNodes g) [0..]
+                  relab (x, m) = (head $ [ v | (a, v) <- labels, a == x ], m)
               in nmap relab g
 
 saveGraphPdf :: FilePath -> Graph -> IO ()
@@ -47,21 +47,25 @@ saveGraphPdf name g = void $ runGraphviz dg Pdf name
                                 , fmtEdge = \ (_, _, l) -> [toLabel l]
                                 }
 
-type Graph = Gr Int EdgeType
+type Graph = Gr Name EdgeType
 
-type Name = Int
+type Name = (Int, Maybe String)
 
 data EdgeType = F | G | C deriving (Ord, Eq, Show)
 
 instance Labellable EdgeType where
     toLabelValue = textLabelValue . pack . show
 
+instance Labellable (Int, Maybe String) where
+  toLabelValue (_, Just s) = textLabelValue . pack $ s
+  toLabelValue (i, _)      = textLabelValue . pack $ show i
+
 -- ---------------------------------------------------------------------------
 
 data Trace = forall a . Get (IVar a) (a -> Trace)
            | forall a . Put (IVar a) a Trace
            | forall a . New (IVarContents a) (IVar a -> Trace)
-           | Fork Trace Trace
+           | Fork (Maybe String) Trace Trace
            | Done
            | forall a . LiftIO (IO a) (a -> Trace)
 
@@ -69,6 +73,7 @@ data Trace = forall a . Get (IVar a) (a -> Trace)
 sched :: Bool -> Sched -> (Trace, Name) -> IO ()
 sched _doSync queue (t, n) = loop t n
  where
+  loop :: Trace -> Name -> IO ()
   loop t thisThread = case t of
 
     New a f -> do
@@ -77,10 +82,12 @@ sched _doSync queue (t, n) = loop t n
 
     Get (IVar v) c -> do
       (e, source) <- readIORef v
-      newName <- atomicModifyIORef (graph queue) $
-        \g -> let (n:_) = newNodes 1 g in (insEdge (thisThread, n, C) (insNode (n, maybe thisThread id $ lab g thisThread) g), n)
+      newName_ <- atomicModifyIORef (graph queue) $
+        \g -> let (n:_) = newNodes 1 g in (insEdge (fst thisThread, n, C) (insNode (n, maybe thisThread id $ lab g (fst thisThread)) g), n)
+      let newName = (newName_, snd thisThread)
       let c' src a = (do
-                        atomicModifyIORef (graph queue) $ \g -> (insEdge (src, newName, G) g, ())
+                        atomicModifyIORef (graph queue) $
+                          \g -> (insEdge (fst src, fst newName, G) g, ())
                      ,c a)
       case e of
          Full a -> do
@@ -89,10 +96,11 @@ sched _doSync queue (t, n) = loop t n
          _other -> do
            r <- atomicModifyIORef v $ \e -> case e of
                         (Empty, src)      -> ((Blocked [(c', newName)], src),     reschedule queue)
-                        (Full a, src)     -> ((Full a, src),                         do
-                                                                                       fst (c' src a)
-                                                                                       loop (snd (c' src a)) newName)
-                        (Blocked cs, src) -> ((Blocked ((c', newName):cs), src),  reschedule queue)
+                        (Full a, src)     -> ((Full a, src),  do
+                                                                fst (c' src a)
+                                                                loop (snd (c' src a)) newName)
+                        (Blocked cs, src) ->
+                          ((Blocked ((c', newName):cs), src), reschedule queue)
            r
 
     Put (IVar v) a t  -> do
@@ -100,12 +108,16 @@ sched _doSync queue (t, n) = loop t n
                Empty      -> ((Full a, thisThread), [])
                Full _     -> error "multiple put"
                Blocked cs -> ((Full a, thisThread), cs)
-      mapM_ (\(c, n) -> do fst (c thisThread a); pushWork queue (snd (c thisThread a)) n) cs
+      mapM_ (\(c, n) -> do fst (c thisThread a);
+                           pushWork queue (snd (c thisThread a)) n) cs
       loop t thisThread
 
-    Fork child parent -> do
+    Fork m child parent -> do
          newName <-  atomicModifyIORef (graph queue) $
-            \g -> let (newName:_) = newNodes 1 g in (insEdge (thisThread, newName, F) $ insNode (newName, newName) g, newName)
+            \g -> let (newName:_) = newNodes 1 g
+                  in (insEdge (fst thisThread, newName, F)
+                      $ insNode (newName, (newName, m)) g
+                     , (newName, m))
          pushWork queue child newName
          loop parent thisThread
 
@@ -188,7 +200,7 @@ pushWork Sched { workpool, idle } t threadName = do
 
 data Sched = Sched
     { no       :: {-# UNPACK #-} !Int,
-      graph    :: IORef (Gr Int EdgeType),
+      graph    :: IORef Graph,
       workpool :: IORef [(Trace, Name)],
       idle     :: IORef [MVar Bool],
       scheds   :: [Sched] -- Global list of all per-thread workers.
@@ -231,15 +243,17 @@ pollIVar (IVar ref) =
        _      -> return (Nothing)
 
 
-data IVarContents a = Full a | Empty | Blocked [(Name -> a -> (IO (), Trace), Name)]
+data IVarContents a = Full a
+                    | Empty
+                    | Blocked [(Name -> a -> (IO (), Trace), Name)]
 
 
 {-# INLINE runPar_internal #-}
-runPar_internal :: Bool -> Par a -> IO (a, Gr Int EdgeType)
+runPar_internal :: Bool -> Par a -> IO (a, Graph)
 runPar_internal _doSync x = do
    workpools <- replicateM numCapabilities $ newIORef []
    idle <- newIORef []
-   graph <- newIORef (insNode (0, 0) Data.Graph.Inductive.empty)
+   graph <- newIORef (insNode (0, (0, Nothing)) Data.Graph.Inductive.empty)
    let states = [ Sched { no=x, workpool=wp, graph=graph, idle, scheds=states }
                 | (x,wp) <- zip [0..] workpools ]
 
@@ -269,8 +283,8 @@ runPar_internal _doSync x = do
           if (cpu /= main_cpu)
              then reschedule state
              else do
-                  rref <- newIORef (Empty, 0)
-                  sched _doSync state ((runCont (x >>= put_ (IVar rref)) (const Done)), 0)
+                  rref <- newIORef (Empty, (0, Nothing))
+                  sched _doSync state ((runCont (x >>= put_ (IVar rref)) (const Done)), (0, Nothing))
                   readIORef rref >>= putMVar m
 
    r <- takeMVar m
@@ -342,4 +356,7 @@ put :: NFData a => IVar a -> a -> Par ()
 put v a = deepseq a (Par $ \c -> Put v a (c ()))
 
 fork :: Par () -> Par ()
-fork p = Par $ \c -> Fork (runCont p (\_ -> Done)) (c ())
+fork p = Par $ \c -> Fork Nothing (runCont p (\_ -> Done)) (c ())
+
+forkNamed :: String -> Par () -> Par ()
+forkNamed s p = Par $ \c -> Fork (Just s) (runCont p (\_ -> Done)) (c ())

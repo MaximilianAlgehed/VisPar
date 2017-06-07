@@ -1,10 +1,10 @@
-import Test.QuickCheck
 import System.Random
 import Data.List
 import Control.DeepSeq
 import TraceInternal
 import Control.DeepSeq
 
+spawn :: NFData a => Par a -> Par (IVar a)
 spawn p = do
   v <- new
   r <- fork $ p >>= put v
@@ -41,8 +41,3 @@ prop_correct d xs = runPar (merge_sort (abs d) xs) == sort xs
 main :: IO ()
 main = do
   saveGraphPdf "graph.pdf" $ makeGraph (merge_sort 2 input) 
-  {-
-  quickCheck prop_correct
-  defaultMain [ bench "sort"       (nf sort input),
-                bench "merge_sort" (nf (runPar . (merge_sort 10)) input) ]
-                -}
