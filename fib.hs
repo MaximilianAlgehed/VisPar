@@ -16,4 +16,4 @@ fib n  | n < 2      = return 1
 main :: IO ()
 main = do
   print $ runPar (fib 4)
-  saveGraphPdf "fib.pdf" $ makeGraph (fib 4)
+  saveGraphPdf "fib.pdf" $ makeGraph "fib 4" (fib 4)

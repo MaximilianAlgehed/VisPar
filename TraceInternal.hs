@@ -31,8 +31,8 @@ import Data.GraphViz hiding (C)
 import Data.Text.Lazy (pack)
 import Data.List
 
-makeGraph :: Par a -> Graph
-makeGraph = normalise . snd . unsafePerformIO . runPar_internal True
+makeGraph :: String -> Par a -> Graph
+makeGraph s = normalise . snd . unsafePerformIO . runPar_internal s True
 
 normalise :: Graph -> Graph
 normalise g = let labels  = zip (sort $ nub $ fst . snd <$> labNodes g) [0..]
@@ -249,11 +249,11 @@ data IVarContents a = Full a
 
 
 {-# INLINE runPar_internal #-}
-runPar_internal :: Bool -> Par a -> IO (a, Graph)
-runPar_internal _doSync x = do
+runPar_internal :: String -> Bool -> Par a -> IO (a, Graph)
+runPar_internal s _doSync x = do
    workpools <- replicateM numCapabilities $ newIORef []
    idle <- newIORef []
-   graph <- newIORef (insNode (0, (0, Nothing)) Data.Graph.Inductive.empty)
+   graph <- newIORef (insNode (0, (0, Just s)) Data.Graph.Inductive.empty)
    let states = [ Sched { no=x, workpool=wp, graph=graph, idle, scheds=states }
                 | (x,wp) <- zip [0..] workpools ]
 
@@ -301,7 +301,7 @@ runPar_internal _doSync x = do
 --   `runST` or with newer libraries that export a Par monad, such as
 --   `lvish`.
 runPar :: Par a -> a
-runPar = fst . unsafePerformIO . runPar_internal True
+runPar = fst . unsafePerformIO . runPar_internal "" True
 
 -- | A version that avoids an internal `unsafePerformIO` for calling
 --   contexts that are already in the `IO` monad.
@@ -309,13 +309,13 @@ runPar = fst . unsafePerformIO . runPar_internal True
 --   Returning any value containing IVar is still disallowed, as it
 --   can compromise type safety.
 runParIO :: Par a -> IO a
-runParIO = (fmap fst) . runPar_internal True
+runParIO = (fmap fst) . runPar_internal "" True
 
 -- | An asynchronous version in which the main thread of control in a
 -- Par computation can return while forked computations still run in
 -- the background.
 runParAsync :: Par a -> a
-runParAsync = fst . unsafePerformIO . runPar_internal False
+runParAsync = fst . unsafePerformIO . runPar_internal "" False
 
 -- -----------------------------------------------------------------------------
 
