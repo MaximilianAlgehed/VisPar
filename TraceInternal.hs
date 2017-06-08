@@ -29,6 +29,7 @@ import GHC.Conc (numCapabilities)
 import Control.DeepSeq
 import Data.Graph.Inductive hiding (ap, new, Graph)
 import Data.GraphViz hiding (C)
+import Data.GraphViz.Attributes.Complete hiding (EdgeType)
 import qualified Data.GraphViz as DG
 import Data.Text.Lazy (pack)
 import Data.List
@@ -49,6 +50,9 @@ saveGraphPdf name g = void $ runGraphviz dg Pdf name
     params :: GraphvizParams Int Name EdgeType Name Name
     params = defaultParams { fmtNode = \ (_,l)     -> [toLabel l]
                            , fmtEdge = \ (_, _, l) -> [toLabel l]
+                           , globalAttributes = [
+                                --GraphAttrs $ [RankDir FromLeft, NodeSep 0.1]
+                              ]
                            --, clusterBy = \ (n, nl) -> DG.C nl (N (n, nl))
                            }
 
@@ -89,10 +93,11 @@ sched _doSync queue (t, n) = loop t n
       (e, source) <- readIORef v
       newName_ <- atomicModifyIORef (graph queue) $
         \g -> let (n:_) = newNodes 1 g
-              in (insEdge (fst thisThread, n, C)
-                  (insNode (n, maybe thisThread id $ lab g (fst thisThread)) g)
+              in ({-insEdge (fst thisThread, n, C)
+                  (insNode (n, maybe thisThread id $ lab g (fst thisThread)) g)-}
+                  g
                  , n)
-      let newName = (newName_, snd thisThread)
+      let newName = thisThread --(newName_, snd thisThread)
       let c' src a = (do
                         atomicModifyIORef (graph queue) $
                           \g -> (insEdge (fst src, fst newName, G) g, ())
