@@ -40,4 +40,4 @@ prop_correct d xs = runPar (merge_sort (abs d) xs) == sort xs
 
 main :: IO ()
 main = do
-  saveGraphPdf "graph.pdf" $ makeGraph (merge_sort 2 input) 
+  saveGraphPdf "graph.pdf" $ makeGraph "0" (merge_sort 2 input) 
