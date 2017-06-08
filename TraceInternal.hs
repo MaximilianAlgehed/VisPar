@@ -39,8 +39,9 @@ makeGraph :: Bool -> String -> Par a -> Graph
 makeGraph b s = normalise . snd . unsafePerformIO . runPar_internal b s True
 
 normalise :: Graph -> Graph
-normalise g = let labels  = zip (sort . nub $ nid . snd <$> labNodes g) [0..]
-                  relab n = Name (head $ [ v | (a, v) <- labels, a == nid n ])
+normalise g = let labels  = zip (sort . nub $ tag . snd <$> labNodes g) [0..]
+                  relab n = Name (nid n)
+                                 (head $ [v|(n_, v) <- labels, n_ == tag n])
                                  (altName n)
                                  (event n)
                   g' = labfilter ((/= "done") . event) $ nmap relab g
@@ -70,6 +71,7 @@ saveGraphPdf vert name g = void $ runGraphviz dg Pdf name
 type Graph = Gr Name EdgeType
 
 data Name = Name { nid     :: Int
+                 , tag     :: Int
                  , altName :: Maybe String
                  , event   :: Event} deriving (Ord, Eq, Show)
 
@@ -80,8 +82,8 @@ instance Labellable EdgeType where
     toLabelValue = textLabelValue . pack . show
 
 instance Labellable Name where
-  toLabelValue (Name _ (Just s) e) = textLabelValue . pack $ s ++ if null e then "" else ": " ++ e
-  toLabelValue (Name i _ e)      = textLabelValue . pack $
+  toLabelValue (Name _ _ (Just s) e) = textLabelValue . pack $ s ++ if null e then "" else ": " ++ e
+  toLabelValue (Name _ i _ e)      = textLabelValue . pack $
                                           show i ++ if null e then "" else ": " ++ e
 
 -- ---------------------------------------------------------------------------
@@ -98,7 +100,7 @@ makeC queue thisThread
   | makeCs queue = do
     atomicModifyIORef (graph queue) $
         \g -> let (n:_) = newNodes 1 g
-                  newName = Name n (altName thisThread) "start"
+                  newName = Name n (tag thisThread) (altName thisThread) "start"
               in (insEdge (nid thisThread, n, C)
                   (insNode (n, newName) g)
                  , newName)
@@ -107,9 +109,9 @@ makeC queue thisThread
 setEvent :: Sched -> Name -> Event -> IO ()
 setEvent queue thisThread event = do
   atomicModifyIORef (graph queue) $
-    \g -> (nmap (\nm@(Name n m _) ->
+    \g -> (nmap (\nm@(Name n t m _) ->
       if n == nid thisThread then
-        Name n m event
+        Name n t m event
       else
         nm) g, ())
 
@@ -164,8 +166,8 @@ sched _doSync queue (t, n) = loop t n
          newName <-  atomicModifyIORef (graph queue) $
             \g -> let (newNode:_) = newNodes 1 g
                   in (insEdge (nid thisThread, newNode, F)
-                      $ insNode (newNode, (Name newNode m "start")) g
-                     , Name newNode m "start")
+                      $ insNode (newNode, (Name newNode newNode m "start")) g
+                     , Name newNode newNode m "start")
          pushWork queue child newName
          newName' <- makeC queue thisThread
          loop parent newName'
@@ -303,7 +305,7 @@ runPar_internal :: Bool -> String -> Bool -> Par a -> IO (a, Graph)
 runPar_internal b s _doSync x = do
    workpools <- replicateM numCapabilities $ newIORef []
    idle <- newIORef []
-   graph <- newIORef (insNode (0, Name 0 (Just s) "start") Data.Graph.Inductive.empty)
+   graph <- newIORef (insNode (0, Name 0 0 (Just s) "start") Data.Graph.Inductive.empty)
    let states = [ Sched { no=x
                         , workpool=wp
                         , makeCs = b
@@ -338,14 +340,15 @@ runPar_internal b s _doSync x = do
           if (cpu /= main_cpu)
              then reschedule state
              else do
-                  rref <- newIORef (Empty, Name 0 (Just s) "")
-                  sched _doSync state ((runCont (x >>= put_ (IVar rref)) (const Done)), (Name 0 (Just s) ""))
+                  rref <- newIORef (Empty, Name 0 0 (Just s) "")
+                  sched _doSync state ((runCont (x >>= put_ (IVar rref)) (const Done)), (Name 0 0 (Just s) ""))
                   readIORef rref >>= putMVar m
 
    r <- takeMVar m
    g <- readIORef graph
    case r of
-     (Full a, _) -> return (a, g)
+     (Full a, _) ->
+      return (a, nmap (\lab -> if b then lab else lab {event = ""}) g)
      _ -> error "no result"
 
 
