@@ -15,7 +15,8 @@ module TraceInternal (
    new, newFull, newFull_, get, put_, put, fork, forkNamed,
    pollIVar,
    EdgeType,
-   Graph, makeGraph, saveGraphPdf
+   Graph, makeGraph, saveGraphPdf,
+   spawn, spawnNamed
  ) where
 
 
@@ -367,3 +368,17 @@ fork p = Par $ \c -> Fork Nothing (runCont p (\_ -> Done)) (c ())
 
 forkNamed :: String -> Par () -> Par ()
 forkNamed s p = Par $ \c -> Fork (Just s) (runCont p (\_ -> Done)) (c ())
+
+----------------
+
+spawn :: NFData a => Par a -> Par (IVar a)
+spawn p = do
+  v <- new
+  fork $ p >>= put v
+  return v
+
+spawnNamed :: NFData a => String -> Par a -> Par (IVar a)
+spawnNamed s p = do
+  v <- new
+  forkNamed s $ p >>= put v
+  return v

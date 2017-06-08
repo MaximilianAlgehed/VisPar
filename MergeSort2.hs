@@ -5,12 +5,6 @@ import Control.DeepSeq
 import TraceInternal
 import Control.DeepSeq
 
-spawn :: NFData a => Par a -> Par (IVar a)
-spawn p = do
-  v <- new
-  r <- fork $ p >>= put v
-  return v
-
 halve :: [a] -> ([a], [a])
 halve xs = splitAt (length xs `div` 2) xs
 
@@ -41,4 +35,4 @@ prop_correct d xs = runPar (merge_sort (abs d) xs) == sort xs
 
 main :: IO ()
 main = do
-  saveGraphPdf "graph.pdf" $ makeGraph "0" (merge_sort 2 input) 
+  saveGraphPdf "merge.graph.pdf" $ makeGraph "0" (merge_sort 2 input)
