@@ -38,8 +38,10 @@ makeGraph :: Bool -> String -> Par a -> Graph
 makeGraph b s = normalise . snd . unsafePerformIO . runPar_internal b s True
 
 normalise :: Graph -> Graph
-normalise g = let labels  = zip (sort . nub $ fst . snd <$> labNodes g) [0..]
-                  relab (x, m) = (head $ [ v | (a, v) <- labels, a == x ], m)
+normalise g = let labels  = zip (sort . nub $ nid . snd <$> labNodes g) [0..]
+                  relab n = Name (head $ [ v | (a, v) <- labels, a == nid n ])
+                                 (altName n)
+                                 (event n)
               in nmap relab g
 
 saveGraphPdf :: FilePath -> Graph -> IO ()
@@ -58,16 +60,20 @@ saveGraphPdf name g = void $ runGraphviz dg Pdf name
 
 type Graph = Gr Name EdgeType
 
-type Name = (Int, Maybe String)
+data Name = Name { nid     :: Int
+                 , altName :: Maybe String
+                 , event   :: Event} deriving (Ord, Eq, Show)
 
 data EdgeType = F | G | C deriving (Ord, Eq, Show)
+type Event = String
 
 instance Labellable EdgeType where
     toLabelValue = textLabelValue . pack . show
 
-instance Labellable (Int, Maybe String) where
-  toLabelValue (_, Just s) = textLabelValue . pack $ s
-  toLabelValue (i, _)      = textLabelValue . pack $ show i
+instance Labellable Name where
+  toLabelValue (Name _ (Just s) e) = textLabelValue . pack $ s ++ if null e then "" else ": " ++ e
+  toLabelValue (Name i _ e)      = textLabelValue . pack $
+                                          show i ++ if null e then "" else ": " ++ e
 
 -- ---------------------------------------------------------------------------
 
@@ -81,14 +87,22 @@ data Trace = forall a . Get (IVar a) (a -> Trace)
 makeC :: Sched -> Name -> IO Name
 makeC queue thisThread
   | makeCs queue = do
-    newName_ <- atomicModifyIORef (graph queue) $
+    atomicModifyIORef (graph queue) $
         \g -> let (n:_) = newNodes 1 g
-              in (insEdge (fst thisThread, n, C)
-                  (insNode (n, maybe thisThread id $ lab g (fst thisThread)) g)
-                 , n)
-    let newName = (newName_, snd thisThread)
-    return newName
+                  newName = Name n (altName thisThread) "start"
+              in (insEdge (nid thisThread, n, C)
+                  (insNode (n, newName) g)
+                 , newName)
   | otherwise = return thisThread
+
+setEvent :: Sched -> Name -> Event -> IO ()
+setEvent queue thisThread event = do
+  atomicModifyIORef (graph queue) $
+    \g -> (nmap (\nm@(Name n m _) ->
+      if n == nid thisThread then
+        Name n m event
+      else
+        nm) g, ())
 
 -- | The main scheduler loop.
 sched :: Bool -> Sched -> (Trace, Name) -> IO ()
@@ -100,15 +114,17 @@ sched _doSync queue (t, n) = loop t n
     New a f -> do
       r <- newIORef (a, thisThread)
       newName <- makeC queue thisThread
+      setEvent queue thisThread "new"
       loop (f (IVar r)) newName
 
     Get (IVar v) c -> do
+      setEvent queue thisThread "get"
       (e, source) <- readIORef v
       newName <- makeC queue thisThread 
       let c' src a = (do
                         atomicModifyIORef (graph queue) $
-                          \g -> (insEdge (fst src, fst newName, G) g, ())
-                     ,c a)
+                          \g -> (insEdge (nid src, nid newName, G) g, ())
+                     , c a)
       case e of
          Full a -> do
                     fst (c' source a)
@@ -130,20 +146,23 @@ sched _doSync queue (t, n) = loop t n
                Blocked cs -> ((Full a, thisThread), cs)
       mapM_ (\(c, n) -> do fst (c thisThread a);
                            pushWork queue (snd (c thisThread a)) n) cs
-      --newName <- makeC queue thisThread
-      loop t thisThread
+      newName <- makeC queue thisThread
+      setEvent queue thisThread "put"
+      loop t newName 
 
     Fork m child parent -> do
+         setEvent queue thisThread "fork"
          newName <-  atomicModifyIORef (graph queue) $
-            \g -> let (newName:_) = newNodes 1 g
-                  in (insEdge (fst thisThread, newName, F)
-                      $ insNode (newName, (newName, m)) g
-                     , (newName, m))
+            \g -> let (newNode:_) = newNodes 1 g
+                  in (insEdge (nid thisThread, newNode, F)
+                      $ insNode (newNode, (Name newNode m "start")) g
+                     , Name newNode m "start")
          pushWork queue child newName
          newName' <- makeC queue thisThread
          loop parent newName'
 
-    Done ->
+    Done -> do
+         setEvent queue thisThread "done"
          if _doSync
          then reschedule queue
 -- We could fork an extra thread here to keep numCapabilities workers
@@ -270,13 +289,12 @@ data IVarContents a = Full a
                     | Empty
                     | Blocked [(Name -> a -> (IO (), Trace), Name)]
 
-
 {-# INLINE runPar_internal #-}
 runPar_internal :: Bool -> String -> Bool -> Par a -> IO (a, Graph)
 runPar_internal b s _doSync x = do
    workpools <- replicateM numCapabilities $ newIORef []
    idle <- newIORef []
-   graph <- newIORef (insNode (0, (0, Just s)) Data.Graph.Inductive.empty)
+   graph <- newIORef (insNode (0, Name 0 (Just s) "start") Data.Graph.Inductive.empty)
    let states = [ Sched { no=x
                         , workpool=wp
                         , makeCs = b
@@ -311,8 +329,8 @@ runPar_internal b s _doSync x = do
           if (cpu /= main_cpu)
              then reschedule state
              else do
-                  rref <- newIORef (Empty, (0, Nothing))
-                  sched _doSync state ((runCont (x >>= put_ (IVar rref)) (const Done)), (0, Nothing))
+                  rref <- newIORef (Empty, Name 0 (Just s) "")
+                  sched _doSync state ((runCont (x >>= put_ (IVar rref)) (const Done)), (Name 0 (Just s) ""))
                   readIORef rref >>= putMVar m
 
    r <- takeMVar m
