@@ -33,6 +33,7 @@ import Data.GraphViz.Attributes.Complete hiding (EdgeType)
 import qualified Data.GraphViz as DG
 import Data.Text.Lazy (pack)
 import Data.List
+import Debug.Trace
 
 makeGraph :: Bool -> String -> Par a -> Graph
 makeGraph b s = normalise . snd . unsafePerformIO . runPar_internal b s True
@@ -42,13 +43,13 @@ normalise g = let labels  = zip (sort . nub $ nid . snd <$> labNodes g) [0..]
                   relab n = Name (head $ [ v | (a, v) <- labels, a == nid n ])
                                  (altName n)
                                  (event n)
+                  g' = labfilter ((/= "done") . event) $ nmap relab g
               in gmap (\ctx@(inn, node, lab, outs) ->
-                  if null outs then
+                  if outdeg g' node == 0 then
                     (inn, node, lab { event = "done" }, outs)
                   else
                     ctx
-                  ) $
-               labfilter ((/= "done") . event) $ nmap relab g
+                  ) g'
 
 saveGraphPdf :: Bool -> FilePath -> Graph -> IO ()
 saveGraphPdf vert name g = void $ runGraphviz dg Pdf name
