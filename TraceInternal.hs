@@ -42,17 +42,25 @@ normalise g = let labels  = zip (sort . nub $ nid . snd <$> labNodes g) [0..]
                   relab n = Name (head $ [ v | (a, v) <- labels, a == nid n ])
                                  (altName n)
                                  (event n)
-              in labfilter ((/= "done") . event) $ nmap relab g
+              in gmap (\ctx@(inn, node, lab, outs) ->
+                  if null outs then
+                    (inn, node, lab { event = "done" }, outs)
+                  else
+                    ctx
+                  ) $
+               labfilter ((/= "done") . event) $ nmap relab g
 
-saveGraphPdf :: FilePath -> Graph -> IO ()
-saveGraphPdf name g = void $ runGraphviz dg Pdf name
+saveGraphPdf :: Bool -> FilePath -> Graph -> IO ()
+saveGraphPdf vert name g = void $ runGraphviz dg Pdf name
   where
     dg     = setDirectedness graphToDot params g
 
     params :: GraphvizParams Int Name EdgeType Name Name
     params = defaultParams { fmtNode = \ (_,l)     -> [toLabel l]
                            , fmtEdge = \ (_, _, l) -> [toLabel l]
-                           , globalAttributes = [
+                           , globalAttributes =
+                             if vert then [] else
+                              [
                                 GraphAttrs $ [RankDir FromLeft, NodeSep 0.1]
                               ]
                            --, clusterBy = \ (n, nl) -> DG.C nl (N (n, nl))
@@ -123,7 +131,7 @@ sched _doSync queue (t, n) = loop t n
       newName <- makeC queue thisThread 
       let c' src a = (do
                         atomicModifyIORef (graph queue) $
-                          \g -> (insEdge (nid src, nid newName, G) g, ())
+                          \g -> (insEdge (nid src, nid thisThread, G) g, ())
                      , c a)
       case e of
          Full a -> do

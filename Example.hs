@@ -22,4 +22,4 @@ example = parMapM (return . (*10)) [1..3]
 main :: IO ()
 main = do
   print $ runPar example
-  saveGraphPdf "triv.graph.pdf" $ makeGraph False "0" example
+  saveGraphPdf True "triv.graph.pdf" $ makeGraph False "0" example
