@@ -42,7 +42,7 @@ normalise g = let labels  = zip (sort . nub $ nid . snd <$> labNodes g) [0..]
                   relab n = Name (head $ [ v | (a, v) <- labels, a == nid n ])
                                  (altName n)
                                  (event n)
-              in nmap relab g
+              in labfilter ((/= "done") . event) $ nmap relab g
 
 saveGraphPdf :: FilePath -> Graph -> IO ()
 saveGraphPdf name g = void $ runGraphviz dg Pdf name
@@ -53,7 +53,7 @@ saveGraphPdf name g = void $ runGraphviz dg Pdf name
     params = defaultParams { fmtNode = \ (_,l)     -> [toLabel l]
                            , fmtEdge = \ (_, _, l) -> [toLabel l]
                            , globalAttributes = [
-                                --GraphAttrs $ [RankDir FromLeft, NodeSep 0.1]
+                                GraphAttrs $ [RankDir FromLeft, NodeSep 0.1]
                               ]
                            --, clusterBy = \ (n, nl) -> DG.C nl (N (n, nl))
                            }
