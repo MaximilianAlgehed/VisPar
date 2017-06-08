@@ -11,12 +11,6 @@ import Control.DeepSeq
  makeGraph :: Par a -> Graph
 -}
 
-spawn :: NFData a => Par a -> Par (IVar a)
-spawn p = do
-  i <- new
-  fork (do x <- p; put i x)
-  return i
-
 parMapM :: NFData b => (a -> Par b) -> [a] -> Par [b]
 parMapM f as = do
   ibs <- mapM (spawn . f) as

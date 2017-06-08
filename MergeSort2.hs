@@ -4,12 +4,6 @@ import Control.DeepSeq
 import TraceInternal
 import Control.DeepSeq
 
-spawn :: NFData a => Par a -> Par (IVar a)
-spawn p = do
-  v <- new
-  r <- fork $ p >>= put v
-  return v
-
 halve :: [a] -> ([a], [a])
 halve xs = splitAt (length xs `div` 2) xs
 
