@@ -20,4 +20,4 @@ example = do
 main :: IO ()
 main = do
   print $ runPar example
-  saveGraphPdf "tiny.graph.pdf" $ makeGraph "0" example
+  saveGraphPdf "tiny.graph.pdf" $ makeGraph False "0" example

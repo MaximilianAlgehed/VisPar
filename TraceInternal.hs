@@ -34,8 +34,8 @@ import qualified Data.GraphViz as DG
 import Data.Text.Lazy (pack)
 import Data.List
 
-makeGraph :: String -> Par a -> Graph
-makeGraph s = normalise . snd . unsafePerformIO . runPar_internal s True
+makeGraph :: Bool -> String -> Par a -> Graph
+makeGraph b s = normalise . snd . unsafePerformIO . runPar_internal b s True
 
 normalise :: Graph -> Graph
 normalise g = let labels  = zip (sort . nub $ fst . snd <$> labNodes g) [0..]
@@ -78,6 +78,18 @@ data Trace = forall a . Get (IVar a) (a -> Trace)
            | Done
            | forall a . LiftIO (IO a) (a -> Trace)
 
+makeC :: Sched -> Name -> IO Name
+makeC queue thisThread
+  | makeCs queue = do
+    newName_ <- atomicModifyIORef (graph queue) $
+        \g -> let (n:_) = newNodes 1 g
+              in (insEdge (fst thisThread, n, C)
+                  (insNode (n, maybe thisThread id $ lab g (fst thisThread)) g)
+                 , n)
+    let newName = (newName_, snd thisThread)
+    return newName
+  | otherwise = return thisThread
+
 -- | The main scheduler loop.
 sched :: Bool -> Sched -> (Trace, Name) -> IO ()
 sched _doSync queue (t, n) = loop t n
@@ -87,17 +99,12 @@ sched _doSync queue (t, n) = loop t n
 
     New a f -> do
       r <- newIORef (a, thisThread)
-      loop (f (IVar r)) thisThread
+      newName <- makeC queue thisThread
+      loop (f (IVar r)) newName
 
     Get (IVar v) c -> do
       (e, source) <- readIORef v
-      newName_ <- atomicModifyIORef (graph queue) $
-        \g -> let (n:_) = newNodes 1 g
-              in ({-insEdge (fst thisThread, n, C)
-                  (insNode (n, maybe thisThread id $ lab g (fst thisThread)) g)-}
-                  g
-                 , n)
-      let newName = thisThread --(newName_, snd thisThread)
+      newName <- makeC queue thisThread 
       let c' src a = (do
                         atomicModifyIORef (graph queue) $
                           \g -> (insEdge (fst src, fst newName, G) g, ())
@@ -123,6 +130,7 @@ sched _doSync queue (t, n) = loop t n
                Blocked cs -> ((Full a, thisThread), cs)
       mapM_ (\(c, n) -> do fst (c thisThread a);
                            pushWork queue (snd (c thisThread a)) n) cs
+      --newName <- makeC queue thisThread
       loop t thisThread
 
     Fork m child parent -> do
@@ -132,7 +140,8 @@ sched _doSync queue (t, n) = loop t n
                       $ insNode (newName, (newName, m)) g
                      , (newName, m))
          pushWork queue child newName
-         loop parent thisThread
+         newName' <- makeC queue thisThread
+         loop parent newName'
 
     Done ->
          if _doSync
@@ -214,6 +223,7 @@ pushWork Sched { workpool, idle } t threadName = do
 data Sched = Sched
     { no       :: {-# UNPACK #-} !Int,
       graph    :: IORef Graph,
+      makeCs   :: Bool,
       workpool :: IORef [(Trace, Name)],
       idle     :: IORef [MVar Bool],
       scheds   :: [Sched] -- Global list of all per-thread workers.
@@ -262,12 +272,17 @@ data IVarContents a = Full a
 
 
 {-# INLINE runPar_internal #-}
-runPar_internal :: String -> Bool -> Par a -> IO (a, Graph)
-runPar_internal s _doSync x = do
+runPar_internal :: Bool -> String -> Bool -> Par a -> IO (a, Graph)
+runPar_internal b s _doSync x = do
    workpools <- replicateM numCapabilities $ newIORef []
    idle <- newIORef []
    graph <- newIORef (insNode (0, (0, Just s)) Data.Graph.Inductive.empty)
-   let states = [ Sched { no=x, workpool=wp, graph=graph, idle, scheds=states }
+   let states = [ Sched { no=x
+                        , workpool=wp
+                        , makeCs = b
+                        , graph=graph
+                        , idle
+                        , scheds=states }
                 | (x,wp) <- zip [0..] workpools ]
 
 #if __GLASGOW_HASKELL__ >= 701 /* 20110301 */
@@ -314,7 +329,7 @@ runPar_internal s _doSync x = do
 --   `runST` or with newer libraries that export a Par monad, such as
 --   `lvish`.
 runPar :: Par a -> a
-runPar = fst . unsafePerformIO . runPar_internal "" True
+runPar = fst . unsafePerformIO . runPar_internal False "" True
 
 -- | A version that avoids an internal `unsafePerformIO` for calling
 --   contexts that are already in the `IO` monad.
@@ -322,13 +337,13 @@ runPar = fst . unsafePerformIO . runPar_internal "" True
 --   Returning any value containing IVar is still disallowed, as it
 --   can compromise type safety.
 runParIO :: Par a -> IO a
-runParIO = (fmap fst) . runPar_internal "" True
+runParIO = (fmap fst) . runPar_internal False "" True
 
 -- | An asynchronous version in which the main thread of control in a
 -- Par computation can return while forked computations still run in
 -- the background.
 runParAsync :: Par a -> a
-runParAsync = fst . unsafePerformIO . runPar_internal "" False
+runParAsync = fst . unsafePerformIO . runPar_internal False "" False
 
 -- -----------------------------------------------------------------------------
 
