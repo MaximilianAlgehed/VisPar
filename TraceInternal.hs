@@ -28,6 +28,7 @@ import GHC.Conc (numCapabilities)
 import Control.DeepSeq
 import Data.Graph.Inductive hiding (ap, new, Graph)
 import Data.GraphViz hiding (C)
+import qualified Data.GraphViz as DG
 import Data.Text.Lazy (pack)
 import Data.List
 
@@ -35,17 +36,20 @@ makeGraph :: String -> Par a -> Graph
 makeGraph s = normalise . snd . unsafePerformIO . runPar_internal s True
 
 normalise :: Graph -> Graph
-normalise g = let labels  = zip (sort $ nub $ fst . snd <$> labNodes g) [0..]
+normalise g = let labels  = zip (sort . nub $ fst . snd <$> labNodes g) [0..]
                   relab (x, m) = (head $ [ v | (a, v) <- labels, a == x ], m)
               in nmap relab g
 
 saveGraphPdf :: FilePath -> Graph -> IO ()
 saveGraphPdf name g = void $ runGraphviz dg Pdf name
   where
-    dg = setDirectedness graphToDot params g
-    params = nonClusteredParams { fmtNode = \ (_,l)     -> [toLabel l]
-                                , fmtEdge = \ (_, _, l) -> [toLabel l]
-                                }
+    dg     = setDirectedness graphToDot params g
+
+    params :: GraphvizParams Int Name EdgeType Name Name
+    params = defaultParams { fmtNode = \ (_,l)     -> [toLabel l]
+                           , fmtEdge = \ (_, _, l) -> [toLabel l]
+                           --, clusterBy = \ (n, nl) -> DG.C nl (N (n, nl))
+                           }
 
 type Graph = Gr Name EdgeType
 
@@ -83,7 +87,10 @@ sched _doSync queue (t, n) = loop t n
     Get (IVar v) c -> do
       (e, source) <- readIORef v
       newName_ <- atomicModifyIORef (graph queue) $
-        \g -> let (n:_) = newNodes 1 g in (insEdge (fst thisThread, n, C) (insNode (n, maybe thisThread id $ lab g (fst thisThread)) g), n)
+        \g -> let (n:_) = newNodes 1 g
+              in (insEdge (fst thisThread, n, C)
+                  (insNode (n, maybe thisThread id $ lab g (fst thisThread)) g)
+                 , n)
       let newName = (newName_, snd thisThread)
       let c' src a = (do
                         atomicModifyIORef (graph queue) $
