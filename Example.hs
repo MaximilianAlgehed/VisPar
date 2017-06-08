@@ -1,4 +1,3 @@
-module Main where
 import TraceInternal
 import Control.DeepSeq
 
@@ -29,4 +28,4 @@ example = parMapM (return . (*10)) [1..3]
 main :: IO ()
 main = do
   print $ runPar example
-  saveGraphPdf "graph.pdf" $ makeGraph example
+  saveGraphPdf "triv.graph.pdf" $ makeGraph "0" example
