@@ -1,4 +1,4 @@
-import TraceInternal
+import VisPar 
 import Control.DeepSeq
 
 {-

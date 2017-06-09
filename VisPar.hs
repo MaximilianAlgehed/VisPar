@@ -6,13 +6,14 @@
 -- module for purposes other than extending the @Par@ monad with new
 -- functionality.
 
-module TraceInternal (
+module VisPar (
    Trace(..), Sched(..), Par(..),
    IVar(..), IVarContents(..),
    sched,
    runPar, runParIO, runParAsync,
    -- runParAsyncHelper,
    new, newFull, newFull_, get, put_, put, fork, forkNamed,
+   setName, getName, withLocalName,
    pollIVar,
    EdgeType,
    Graph, makeGraph, saveGraphPdf,
@@ -30,13 +31,12 @@ import Control.DeepSeq
 import Data.Graph.Inductive hiding (ap, new, Graph)
 import Data.GraphViz hiding (C)
 import Data.GraphViz.Attributes.Complete hiding (EdgeType)
-import qualified Data.GraphViz as DG
 import Data.Text.Lazy (pack)
 import Data.List
-import Debug.Trace
 
-makeGraph :: Bool -> String -> Par a -> Graph
-makeGraph b s = normalise . snd . unsafePerformIO . runPar_internal b s True
+makeGraph :: Bool -> Maybe String -> Par a -> Graph
+makeGraph b s = normalise . snd . unsafePerformIO .
+  runPar_internal b (maybe "0" id s) True
 
 normalise :: Graph -> Graph
 normalise g = let labels  = zip (sort . nub $ tag . snd <$> labNodes g) [0..]
@@ -91,7 +91,9 @@ instance Labellable Name where
 data Trace = forall a . Get (IVar a) (a -> Trace)
            | forall a . Put (IVar a) a Trace
            | forall a . New (IVarContents a) (IVar a -> Trace)
-           | Fork (Maybe String) Trace Trace
+           | Fork Trace Trace
+           | SetName String Trace
+           | GetName (String -> Trace)
            | Done
            | forall a . LiftIO (IO a) (a -> Trace)
 
@@ -121,6 +123,19 @@ sched _doSync queue (t, n) = loop t n
  where
   loop :: Trace -> Name -> IO ()
   loop t thisThread = case t of
+
+    SetName s t -> do
+      newName <- atomicModifyIORef (graph queue) $
+        \g -> (nmap (\nm ->
+          if nid nm == nid thisThread then
+            nm { altName = Just s}
+          else
+            nm) g, thisThread { altName = Just s})
+      loop t newName
+
+    GetName c -> loop
+      (c (maybe (show (tag thisThread)) id $ altName thisThread))
+      thisThread
 
     New a f -> do
       r <- newIORef (a, thisThread)
@@ -161,13 +176,13 @@ sched _doSync queue (t, n) = loop t n
       setEvent queue thisThread "put"
       loop t newName 
 
-    Fork m child parent -> do
+    Fork child parent -> do
          setEvent queue thisThread "fork"
          newName <-  atomicModifyIORef (graph queue) $
             \g -> let (newNode:_) = newNodes 1 g
                   in (insEdge (nid thisThread, newNode, F)
-                      $ insNode (newNode, (Name newNode newNode m "start")) g
-                     , Name newNode newNode m "start")
+                      $ insNode (newNode, (Name newNode newNode Nothing "start")) g
+                     , Name newNode newNode Nothing "start")
          pushWork queue child newName
          newName' <- makeC queue thisThread
          loop parent newName'
@@ -414,10 +429,24 @@ put :: NFData a => IVar a -> a -> Par ()
 put v a = deepseq a (Par $ \c -> Put v a (c ()))
 
 fork :: Par () -> Par ()
-fork p = Par $ \c -> Fork Nothing (runCont p (\_ -> Done)) (c ())
+fork p = Par $ \c -> Fork (runCont p (\_ -> Done)) (c ())
 
 forkNamed :: String -> Par () -> Par ()
-forkNamed s p = Par $ \c -> Fork (Just s) (runCont p (\_ -> Done)) (c ())
+forkNamed s p = fork $ setName s >> p
+
+setName :: String -> Par ()
+setName s = Par $ \c -> SetName s (c ())
+
+getName :: Par String
+getName = Par $ \c -> GetName c
+
+withLocalName :: String -> Par a -> Par a
+withLocalName s p = do
+  sold <- getName 
+  setName s
+  a <- p
+  setName sold
+  return a
 
 ----------------
 

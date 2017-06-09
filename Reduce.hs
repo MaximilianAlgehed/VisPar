@@ -1,5 +1,5 @@
 module Main where
-import TraceInternal
+import VisPar 
 import Control.DeepSeq
 import Data.List
 
@@ -16,7 +16,7 @@ reduceBuggy :: NFData a => (a -> a -> a) -> [a] -> Par a
 reduceBuggy f [x] = return x
 reduceBuggy f xs  = do
   let (ls, rs) = splitAt (length xs `div` 2) xs
-  rv  <- spawn  $ reduceBuggy f rs
+  rv  <- spawn $ reduceBuggy f rs
   r <- get rv
   l <- reduceBuggy f ls
   return (f l r)
@@ -31,5 +31,6 @@ main :: IO ()
 main = do
   print $ runPar example
   print $ runPar exampleBuggy
-  saveGraphPdf True "reduce.graph.pdf"       $ makeGraph True "0" example
-  saveGraphPdf True "reduce.buggy.graph.pdf" $ makeGraph True "0" exampleBuggy
+  saveGraphPdf True "reduce.graph.pdf"       $ makeGraph True Nothing example
+  saveGraphPdf True "reduce.buggy.graph.pdf" $ makeGraph True
+    Nothing exampleBuggy

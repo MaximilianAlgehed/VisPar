@@ -1,5 +1,5 @@
 module Main where
-import TraceInternal
+import VisPar 
 import Control.DeepSeq
 
 example :: Par Int
@@ -19,4 +19,4 @@ example = do
 main :: IO ()
 main = do
   print $ runPar example
-  saveGraphPdf True "broadcast.graph.pdf" $ makeGraph True "0" example
+  saveGraphPdf True "broadcast.graph.pdf" $ makeGraph True Nothing example

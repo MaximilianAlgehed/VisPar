@@ -2,7 +2,7 @@ module Main where
 import System.Random
 import Data.List
 import Control.DeepSeq
-import TraceInternal
+import VisPar 
 import Control.DeepSeq
 
 halve :: [a] -> ([a], [a])
@@ -35,4 +35,4 @@ prop_correct d xs = runPar (merge_sort (abs d) xs) == sort xs
 
 main :: IO ()
 main = do
-  saveGraphPdf True "merge.graph.pdf" $ makeGraph True "0" (merge_sort 2 input)
+  saveGraphPdf True "merge.graph.pdf" $ makeGraph True Nothing (merge_sort 2 input)
