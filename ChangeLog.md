@@ -1,4 +1,4 @@
-# Revision history for ParMGraph
+# Revision history for VisPar
 
 ## 0.1.0.0  -- YYYY-mm-dd
 
