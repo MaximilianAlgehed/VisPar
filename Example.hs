@@ -1,4 +1,4 @@
-import VisPar 
+import VisPar
 import Control.DeepSeq
 
 {-
@@ -22,4 +22,4 @@ example = parMapM (return . (*10)) [1..3]
 main :: IO ()
 main = do
   print $ runPar example
-  saveGraphPdf True "triv.graph.pdf" $ makeGraph False "0" example
+  saveGraphPdf True "triv.graph.pdf" $ makeGraph False (Just "0") example
