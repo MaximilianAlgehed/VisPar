@@ -22,7 +22,7 @@ reduceBuggy f xs  = do
   return (f l r)
 
 example :: Par Int
-example = reduce (+) [1..6]
+example = reduce (+) [1..12]
 
 exampleBuggy :: Par Int
 exampleBuggy = reduceBuggy (+) [1..6]
