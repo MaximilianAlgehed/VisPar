@@ -151,7 +151,6 @@ sched (t, n) = loop t n
 
      Get (IVar v) c -> do
        setEvent thisThread "get"
-       (e, source) <- liftIO $ readIORef v
        newName <- makeC thisThread 
        let c' src a = ( (S.modify $ \queue -> 
                           let g = graph queue in
@@ -159,20 +158,17 @@ sched (t, n) = loop t n
                                   graph = insEdge (nid src, nid thisThread, G) g
                                 }) :: Run ()
                       , c a)
-       case e of
-          Full a -> do
-                     fst (c' source a)
-                     loop (snd (c' source a)) newName
-          _other -> do
-            r <- liftIO $ 
-                 atomicModifyIORef v $ \e -> case e of
-                         (Empty, src)      -> ((Blocked [(c', newName)], src),     reschedule)
-                         (Full a, src)     -> ((Full a, src),  do
-                                                                 fst (c' src a)
-                                                                 loop (snd (c' src a)) newName)
-                         (Blocked cs, src) ->
-                           ((Blocked ((c', newName):cs), src), reschedule)
-            r
+       r <- liftIO $
+            atomicModifyIORef v $ \e -> case e of
+                (Empty, src)  -> ( (Blocked [(c', newName)], src)
+                                 , reschedule)
+                (Full a, src) -> ( (Full a, src)
+                                 ,  do
+                                      fst (c' src a)
+                                      loop (snd (c' src a)) newName)
+                (Blocked cs, src) -> ( (Blocked ((c', newName):cs), src)
+                                     , reschedule)
+       r
 
      Put (IVar v) a t  -> do
        cs <- liftIO $ atomicModifyIORef v $ \(e, _) -> case e of
@@ -197,7 +193,9 @@ sched (t, n) = loop t n
        newName' <- makeC thisThread
        loop parent newName'
 
-     Done -> setEvent thisThread "done"
+     Done -> do
+      setEvent thisThread "done"
+      reschedule
 
 pushWork :: Trace -> Name -> Run ()
 pushWork t threadName = do
@@ -211,8 +209,7 @@ reschedule :: Run ()
 reschedule = do
   workpool <- S.gets workpool
   case workpool of
-    []     -> do
-      return ()
+    []     -> return ()
     (t:ts) -> do
       S.modify $ \queue -> queue { workpool = ts }
       sched t
