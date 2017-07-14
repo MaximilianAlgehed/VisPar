@@ -212,7 +212,6 @@ reschedule = do
   workpool <- S.gets workpool
   case workpool of
     []     -> do
-      liftIO $ putStrLn "Dependency failure, empty workpool"
       return ()
     (t:ts) -> do
       S.modify $ \queue -> queue { workpool = ts }
