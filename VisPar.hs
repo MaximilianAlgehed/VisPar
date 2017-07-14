@@ -10,24 +10,21 @@ module VisPar (
    Trace(..), Sched(..), Par(..),
    IVar(..), IVarContents(..),
    sched,
-   runPar, runParIO, runParAsync,
+   runPar,
    -- runParAsyncHelper,
    new, newFull, newFull_, get, put_, put, fork, forkNamed,
    setName, getName, withLocalName,
-   pollIVar,
    EdgeType,
    Graph, makeGraph, saveGraphPdf,
    spawn, spawnNamed
  ) where
 
-import Control.Monad.State as S hiding (put)
 import qualified Control.Monad.State as S
+import Control.Monad.Trans
 import Control.Monad as M hiding (mapM, sequence, join)
 import Prelude hiding (mapM, sequence, head,tail)
 import Data.IORef
 import System.IO.Unsafe
-import Control.Concurrent
-import GHC.Conc (numCapabilities)
 import Control.DeepSeq
 import Data.Graph.Inductive hiding (ap, new, Graph)
 import Data.GraphViz hiding (C)
@@ -89,7 +86,7 @@ instance Labellable Name where
 
 -- ---------------------------------------------------------------------------
 
-type Run a = StateT Sched IO a
+type Run a = S.StateT Sched IO a
 
 data Trace = forall a . Get (IVar a) (a -> Trace)
            | forall a . Put (IVar a) a Trace
@@ -101,7 +98,7 @@ data Trace = forall a . Get (IVar a) (a -> Trace)
 
 makeC :: Name -> Run Name
 makeC thisThread = do
-  cond <- gets makeCs
+  cond <- S.gets makeCs
   if cond then do
     queue <- S.get
     let g       = graph queue
@@ -115,7 +112,7 @@ makeC thisThread = do
 
 setEvent :: Name -> Event -> Run ()
 setEvent thisThread event = do
-  modify $ \queue ->
+  S.modify $ \queue ->
     let g = graph queue in
       queue
         { graph = nmap (\nm@(Name n t m _) ->
@@ -133,12 +130,13 @@ sched (t, n) = loop t n
    loop t thisThread = case t of
 
      SetName s t -> do
-       newName <- atomicModifyIORef (graph queue) $
-         \g -> (nmap (\nm ->
-           if nid nm == nid thisThread then
-             nm { altName = Just s}
-           else
-             nm) g, thisThread { altName = Just s})
+       g <- S.gets graph
+       let newName = thisThread { altName = Just s }
+           g' = nmap (\nm -> if nid nm == nid thisThread then
+                                nm { altName = Just s}
+                             else
+                                nm) g
+       S.modify $ \queue -> queue { graph = g' }
        loop t newName
 
      GetName c -> loop
@@ -146,38 +144,41 @@ sched (t, n) = loop t n
        thisThread
 
      New a f -> do
-       r <- newIORef (a, thisThread)
+       r <- liftIO $ newIORef (a, thisThread)
        newName <- makeC thisThread
        setEvent thisThread "new"
        loop (f (IVar r)) newName
 
      Get (IVar v) c -> do
        setEvent thisThread "get"
-       (e, source) <- readIORef v
+       (e, source) <- liftIO $ readIORef v
        newName <- makeC thisThread 
-       let c' src a = (do
-                         atomicModifyIORef (graph queue) $
-                           \g -> (insEdge (nid src, nid thisThread, G) g, ())
+       let c' src a = ( (S.modify $ \queue -> 
+                          let g = graph queue in
+                          queue {
+                                  graph = insEdge (nid src, nid thisThread, G) g
+                                }) :: Run ()
                       , c a)
        case e of
           Full a -> do
                      fst (c' source a)
                      loop (snd (c' source a)) newName
           _other -> do
-            r <- atomicModifyIORef v $ \e -> case e of
-                         (Empty, src)      -> ((Blocked [(c', newName)], src),     reschedule queue)
+            r <- liftIO $ 
+                 atomicModifyIORef v $ \e -> case e of
+                         (Empty, src)      -> ((Blocked [(c', newName)], src),     reschedule)
                          (Full a, src)     -> ((Full a, src),  do
                                                                  fst (c' src a)
                                                                  loop (snd (c' src a)) newName)
                          (Blocked cs, src) ->
-                           ((Blocked ((c', newName):cs), src), reschedule queue)
+                           ((Blocked ((c', newName):cs), src), reschedule)
             r
 
      Put (IVar v) a t  -> do
-       cs <- atomicModifyIORef v $ \(e, _) -> case e of
-                Empty      -> ((Full a, thisThread), [])
-                Full _     -> error "multiple put"
-                Blocked cs -> ((Full a, thisThread), cs)
+       cs <- liftIO $ atomicModifyIORef v $ \(e, _) -> case e of
+                        Empty      -> ((Full a, thisThread), [])
+                        Full _     -> error "multiple put"
+                        Blocked cs -> ((Full a, thisThread), cs)
        mapM_ (\(c, n) -> do fst (c thisThread a);
                             pushWork (snd (c thisThread a)) n) cs
        newName <- makeC thisThread
@@ -186,11 +187,12 @@ sched (t, n) = loop t n
 
      Fork child parent -> do
        setEvent thisThread "fork"
-       newName <-  atomicModifyIORef (graph queue) $
-          \g -> let (newNode:_) = newNodes 1 g
-                in (insEdge (nid thisThread, newNode, F)
-                    $ insNode (newNode, (Name newNode newNode Nothing "start")) g
-                   , Name newNode newNode Nothing "start")
+       g <- S.gets graph 
+       let (newNode:_) = newNodes 1 g
+           newName     = Name newNode newNode Nothing "start"
+           g'          = insEdge (nid thisThread, newNode, F)
+                         (insNode (newNode, newName) g)
+       S.modify $ \queue -> queue { graph = g' }
        pushWork child newName
        newName' <- makeC thisThread
        loop parent newName'
@@ -199,7 +201,7 @@ sched (t, n) = loop t n
 
 pushWork :: Trace -> Name -> Run ()
 pushWork t threadName = do
-  modify $ \queue ->
+  S.modify $ \queue ->
     let ts = workpool queue in
     queue { workpool = (t, threadName):ts }
 
@@ -207,13 +209,13 @@ pushWork t threadName = do
 --   work-stealing mode.
 reschedule :: Run () 
 reschedule = do
-  workpool <- gets workpool
+  workpool <- S.gets workpool
   case workpool of
     []     -> do
       liftIO $ putStrLn "Dependency failure, empty workpool"
       return ()
     (t:ts) -> do
-      modify $ \queue -> queue { workpool = ts }
+      S.modify $ \queue -> queue { workpool = ts }
       sched t
 
 data Sched = Sched
@@ -247,19 +249,9 @@ instance Eq (IVar a) where
 instance NFData (IVar a) where
   rnf _ = ()
 
-
--- From outside the Par computation we can peek.  But this is nondeterministic.
-pollIVar :: IVar a -> IO (Maybe a)
-pollIVar (IVar ref) =
-  do contents <- readIORef ref
-     case fst contents of
-       Full x -> return (Just x)
-       _      -> return (Nothing)
-
-
 data IVarContents a = Full a
                     | Empty
-                    | Blocked [(Name -> a -> (IO (), Trace), Name)]
+                    | Blocked [(Name -> a -> (Run (), Trace), Name)]
 
 {-# INLINE runPar_internal #-}
 runPar_internal :: Bool -> String -> Par a -> IO (a, Graph)
@@ -267,7 +259,7 @@ runPar_internal makeCs s x = do
    let gr = insNode (0, Name 0 0 (Just s) "start") Data.Graph.Inductive.empty
        queue = Sched gr makeCs []
    rref <- newIORef (Empty, Name 0 0 (Just s) "")
-   s <- flip execStateT queue $
+   s <- flip S.execStateT queue $
     sched (runCont (x >>= put_ (IVar rref)) (const Done), Name 0 0 (Just s) "")
 
    let g = graph s
