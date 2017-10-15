@@ -16,6 +16,7 @@ fib' n  | n < 2      = return 1
        | otherwise  = do
           leftVar <- spawnNamed ("fib " ++ show (n - 1)) $ fib' (n - 1)
           right   <- withLocalName ("fib " ++ show (n - 2)) $ fib' (n - 2)
+          --right <- fib' (n - 2)
           left    <- get leftVar
           return $ left + right
 

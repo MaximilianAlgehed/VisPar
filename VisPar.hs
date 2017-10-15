@@ -80,9 +80,10 @@ instance Labellable EdgeType where
     toLabelValue = textLabelValue . pack . show
 
 instance Labellable Name where
-  toLabelValue (Name _ _ (Just s) e) = textLabelValue . pack $ s ++ if null e then "" else ": " ++ e
-  toLabelValue (Name _ i _ e)      = textLabelValue . pack $
-                                          show i ++ if null e then "" else ": " ++ e
+  toLabelValue (Name _ _ (Just s) e) =
+    textLabelValue . pack $ s ++ if null e then "" else ": " ++ e
+  toLabelValue (Name _ i _ e)        =
+    textLabelValue . pack $ show i ++ if null e then "" else ": " ++ e
 
 -- ---------------------------------------------------------------------------
 
@@ -219,9 +220,7 @@ data Sched = Sched
       makeCs   :: Bool,
       workpool :: [(Trace, Name)] }
 
-newtype Par a = Par {
-    runCont :: (a -> Trace) -> Trace
-}
+newtype Par a = Par { runCont :: (a -> Trace) -> Trace }
 
 instance Functor Par where
     fmap f m = Par $ \c -> runCont m (c . f)
