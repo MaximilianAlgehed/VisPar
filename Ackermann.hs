@@ -1,5 +1,5 @@
 module Main where
-import VisPar 
+import VisPar
 import Control.DeepSeq
 
 ack :: Int -> Int -> Par Int
@@ -16,4 +16,4 @@ ack m n = do
 main :: IO ()
 main = do
   print $ runPar (ack 2 2)
-  saveGraphPdf True "ack.graph.pdf" $ makeGraph True "ack 2 2" (ack 2 2)
+  saveGraphPdf True "ack.graph.pdf" $ makeGraph True (Just "ack 2 2") (ack 2 2)
