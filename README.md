@@ -8,5 +8,5 @@ This repository contains the code associated with the paper
 
 It was presented at
 
-* [[https://icfp17.sigplan.org/event/fhpc-2017-papers-vispar-visualising-dataflow-graphs-from-the-par-monad][FHPC 2017: the 6th ACM SIGPLAN International Workshop on Functional High-Performance Computing]]
-* [[http://foswiki.cs.uu.nl/foswiki/IFIP21/Lesbos][IFIP WG 2.1 on Algorithmic Languages and Calculi, meeting #76 (Lesbos)]]
+* [FHPC 2017: the 6th ACM SIGPLAN International Workshop on Functional High-Performance Computing](https://icfp17.sigplan.org/event/fhpc-2017-papers-vispar-visualising-dataflow-graphs-from-the-par-monad)
+* [IFIP WG 2.1 on Algorithmic Languages and Calculi, meeting #76 (Lesbos)](http://foswiki.cs.uu.nl/foswiki/IFIP21/Lesbos)
