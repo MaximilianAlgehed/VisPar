@@ -1,4 +1,4 @@
-import VisPar 
+import VisPar
 import Control.DeepSeq
 
 parMapM :: NFData b => (a -> Par b) -> [a] -> Par [b]

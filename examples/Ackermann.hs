@@ -1,5 +1,5 @@
 module Main where
-import VisPar 
+import VisPar
 import Control.DeepSeq
 
 ack :: Int -> Int -> Par Int
