@@ -16,4 +16,5 @@ ack m n = do
 main :: IO ()
 main = do
   print $ runPar (ack 2 2)
-  saveGraphPdf True "ack.graph.pdf" $ makeGraph True "ack 2 2" (ack 2 2)
+  g <- visPar Complete "ack 2 2" (ack 2 2)
+  saveGraphPdf Vertical "ack.graph.pdf" g

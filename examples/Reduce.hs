@@ -31,6 +31,9 @@ main :: IO ()
 main = do
   print $ runPar example
   print $ runPar exampleBuggy
-  saveGraphPdf True "reduce.graph.pdf"       $ makeGraph True Nothing example
-  saveGraphPdf True "reduce.buggy.graph.pdf" $ makeGraph True
-    Nothing exampleBuggy
+
+  g <- visPar Complete "0" example
+  saveGraphPdf Vertical "reduce.graph.pdf" g
+
+  g <- visPar Complete "0" exampleBuggy
+  saveGraphPdf Vertical "reduce.buggy.graph.pdf" g

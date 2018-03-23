@@ -19,4 +19,5 @@ example = do
 main :: IO ()
 main = do
   print $ runPar example
-  saveGraphPdf True "broadcast.graph.pdf" $ makeGraph True Nothing example
+  g <- visPar Complete "0" example
+  saveGraphPdf Vertical "broadcast.graph.pdf" g

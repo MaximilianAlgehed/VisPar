@@ -7,16 +7,12 @@
 -- functionality.
 
 module VisPar (
-   Trace(..), Sched(..), Par(..),
-   IVar(..), IVarContents(..),
-   sched,
-   runPar, runParIO, runParAsync,
-   -- runParAsyncHelper,
-   new, newFull, newFull_, get, put_, put, fork, forkNamed,
-   setName, getName, withLocalName,
+   Par, IVar, VisMode(..), DisplayMode(..),
+   runPar, runParIO, visPar,
+   new, get, put, fork, forkNamed,
+   setName, withLocalName,
    pollIVar,
-   EdgeType,
-   Graph, makeGraph, saveGraphPdf,
+   Graph, saveGraphPdf,
    spawn, spawnNamed
  ) where
 
@@ -34,10 +30,6 @@ import Data.GraphViz.Attributes.Complete hiding (EdgeType)
 import Data.Text.Lazy (pack)
 import Data.List
 
-makeGraph :: Bool -> Maybe String -> Par a -> Graph
-makeGraph b s = normalise . snd . unsafePerformIO .
-  runPar_internal b (maybe "0" id s) True
-
 normalise :: Graph -> Graph
 normalise g = let labels  = zip (sort . nub $ tag . snd <$> labNodes g) [0..]
                   relab n = Name (nid n)
@@ -52,7 +44,7 @@ normalise g = let labels  = zip (sort . nub $ tag . snd <$> labNodes g) [0..]
                     ctx
                   ) g'
 
-saveGraphPdf :: Bool -> FilePath -> Graph -> IO ()
+saveGraphPdf :: DisplayMode -> FilePath -> Graph -> IO ()
 saveGraphPdf vert name g = void $ runGraphviz dg Pdf name
   where
     dg     = setDirectedness graphToDot params g
@@ -61,7 +53,7 @@ saveGraphPdf vert name g = void $ runGraphviz dg Pdf name
     params = defaultParams { fmtNode = \ (_,l)     -> [toLabel l]
                            , fmtEdge = \ (_, _, l) -> [toLabel l]
                            , globalAttributes =
-                             if vert then [] else
+                             if vert == Vertical then [] else
                               [
                                 GraphAttrs $ [RankDir FromLeft, NodeSep 0.1]
                               ]
@@ -82,8 +74,8 @@ instance Labellable EdgeType where
     toLabelValue = textLabelValue . pack . show
 
 instance Labellable Name where
-  toLabelValue (Name _ _ (Just s) e) = textLabelValue . pack $ s ++ if null e then "" else ": " ++ e
-  toLabelValue (Name _ i _ e)      = textLabelValue . pack $
+  toLabelValue (Name _ _ (Just s) e) = textLabelValue . pack $ (if null s then "" else s ++ ": ") ++ e
+  toLabelValue (Name _ i _ e)        = textLabelValue . pack $
                                           show i ++ if null e then "" else ": " ++ e
 
 -- ---------------------------------------------------------------------------
@@ -366,6 +358,20 @@ runPar_internal b s _doSync x = do
       return (a, nmap (\lab -> if b then lab else lab {event = ""}) g)
      _ -> error "no result"
 
+data VisMode = Compact
+             | Complete
+             deriving (Ord, Eq, Show)
+
+data DisplayMode = Vertical
+                 | Horizontal
+                 deriving (Ord, Eq, Show)
+
+-- | Visualise a par monad computation
+visPar :: VisMode -> String -> Par a -> IO Graph
+visPar vm nodeName par = normalise . snd <$> runPar_internal (toBool vm) nodeName False par
+  where
+    toBool Compact  = False
+    toBool Complete = True
 
 -- | Run a parallel, deterministic computation and return its result.
 --
@@ -384,25 +390,11 @@ runPar = fst . unsafePerformIO . runPar_internal False "" True
 runParIO :: Par a -> IO a
 runParIO = (fmap fst) . runPar_internal False "" True
 
--- | An asynchronous version in which the main thread of control in a
--- Par computation can return while forked computations still run in
--- the background.
-runParAsync :: Par a -> a
-runParAsync = fst . unsafePerformIO . runPar_internal False "" False
-
 -- -----------------------------------------------------------------------------
 
 -- | Creates a new @IVar@
 new :: Par (IVar a)
 new  = Par $ New Empty
-
--- | Creates a new @IVar@ that contains a value
-newFull :: NFData a => a -> Par (IVar a)
-newFull x = deepseq x (Par $ New (Full x))
-
--- | Creates a new @IVar@ that contains a value (head-strict only)
-newFull_ :: a -> Par (IVar a)
-newFull_ !x = Par $ New (Full x)
 
 -- | Read the value in an @IVar@.  The 'get' operation can only return when the
 -- value has been written by a prior or parallel @put@ to the same
