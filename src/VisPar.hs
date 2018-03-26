@@ -74,7 +74,7 @@ instance Labellable EdgeType where
     toLabelValue = textLabelValue . pack . show
 
 instance Labellable Name where
-  toLabelValue (Name _ _ (Just s) e) = textLabelValue . pack $ (if null s then "" else s ++ ": ") ++ e
+  toLabelValue (Name _ _ (Just s) e) = textLabelValue . pack $ s ++ if null e then "" else ": " ++ e
   toLabelValue (Name _ i _ e)        = textLabelValue . pack $
                                           show i ++ if null e then "" else ": " ++ e
 
